@@ -1,0 +1,5 @@
+{
+  "name": "DevContext AI Manager",
+  "description": "A developer-focused project management tool designed to manage context, tasks, and documentation for seamless handoffs to AI assistants.",
+  "requestFramePermissions": []
+}
