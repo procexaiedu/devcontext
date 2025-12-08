@@ -20,9 +20,12 @@ export interface Subtask {
 export interface DocFile {
   id: string;
   name: string;
-  type: 'md' | 'json' | 'txt';
+  type: string;                // Content type (extension)
+  kind: 'file' | 'folder';     // New: Distinguish files vs folders
   content: string;
-  path?: string; // New: Folder path support
+  path: string;                // Folder path (e.g. "/docs/api")
+  source?: 'local' | 'github'; // New: Origin of the file
+  sha?: string;                // New: GitHub SHA for sync
 }
 
 export interface KanbanColumn {
@@ -64,7 +67,10 @@ export interface Project {
   columns: KanbanColumn[];
   tags: string[];
   relatedProjectIds: string[];
-  threads: ChatThread[]; // New: Chat history
+  threads: ChatThread[];
+  githubRepo?: string;   // New: "username/repo"
+  githubBranch?: string; // New: "main" or "master"
+  githubToken?: string;  // New: Optional project-specific token (if user overrides global)
   createdAt: number;
   updatedAt: number;
 }

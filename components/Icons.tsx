@@ -45,7 +45,9 @@ import {
   Square,
   Paperclip,
   List,
-  Grid
+  Grid,
+  Github,
+  Lock
 } from 'lucide-react';
 
 export {
@@ -66,5 +68,7 @@ export {
   Square,
   Paperclip,
   List,
-  Grid
+  Grid,
+  Github,
+  Lock
 };

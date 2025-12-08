@@ -9,7 +9,7 @@ export const transcribeAudio = async (audioBlob: Blob, apiKey: string): Promise<
 
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
-    formData.append('model', 'distil-whisper-large-v3-en'); // Or 'whisper-large-v3'
+    formData.append('model', 'whisper-large-v3-turbo'); // Or 'whisper-large-v3'
     // Note: Groq Whisper supports multiple languages including PT
     
     try {
@@ -72,7 +72,6 @@ export const buildSystemPrompt = (data: AppData, currentProjectId: string | null
         id: project.id,
         name: project.name,
         description: project.description,
-        // Limit docs to avoid huge context usage. Group by folder structure could be added here.
         documentation_files: project.files.map(f => `[${f.path || '/'}${f.name}]:\n${f.content.substring(0, 1000)}...`).join('\n\n'), 
         tasks: projectTasks.map(t => ({
           id: t.id,
@@ -85,16 +84,77 @@ export const buildSystemPrompt = (data: AppData, currentProjectId: string | null
       }
     : null;
 
-  return `
-${customInstructions}
+  const CORE_SYSTEM_PROMPT = `
+You are DevContext PM, an expert Senior Technical Project Manager. Your goal is to help the user organize their work, manage projects, and turn unstructured thoughts or backlogs into actionable tasks and documentation.
 
-GLOBAL DATABASE CONTEXT:
+### CAPABILITIES & TOOLS
+You have direct access to the project database. You MUST use the following tools to perform actions. To use a tool, you MUST output a SINGLE JSON block at the end of your response.
+
+**Available Tools:**
+
+1.  **MANAGE_PROJECT**
+    *   Action: 'CREATE'
+    *   Args: { name: string, description?: string }
+    *   *Usage:* Create a NEW project.
+
+    *   Action: 'UPDATE'
+    *   Args: { id: string, name?: string, description?: string, status?: 'ACTIVE' | 'ARCHIVED' | 'COMPLETED' }
+    *   *Usage:* Update an EXISTING project.
+
+2.  **MANAGE_TASK**
+    *   Action: 'CREATE'
+    *   Args: { projectId?: string, title: string, description?: string, status?: 'TODO' | 'IN_PROGRESS' | 'DONE', priority?: 'LOW' | 'MEDIUM' | 'HIGH', tags?: string[], subtasks?: string[], dueDate?: string (ISO) }
+    *   *Usage:* Create a new task. If the user pastes a list/backlog, break it down and create multiple tasks.
+    *   *Note:* If 'projectId' is omitted, it defaults to the current active project.
+
+    *   Action: 'UPDATE'
+    *   Args: { id: string, title?: string, status?: string, priority?: string, ... }
+    *   *Usage:* Modify an existing task.
+
+3.  **BATCH_CREATE_TASKS**
+    *   Action: 'CREATE'
+    *   Args: { tasks: [ { title: string, description?: string, priority?: string, ... } ] }
+    *   *Usage:* Create MULTIPLE tasks at once. Use this for backlogs, lists, or breaking down big features.
+
+4.  **MANAGE_FILE**
+    *   Action: 'CREATE' | 'UPDATE'
+    *   Args: { id?: string, name: string, content: string, path?: string }
+    *   *Usage:* Create or update documentation (Markdown). Use this to save notes, requirements, or technical specs.
+
+### INSTRUCTIONS
+*   **Role:** Act as a proactive PM. If the user gives you a rough idea, suggest a project structure or task breakdown.
+*   **Backlogs:** If the user provides a list of items (backlog), analyze them. Ask to convert to tasks. **ALWAYS use 'BATCH_CREATE_TASKS'** to create the whole list in one go.
+*   **Context:** Always check the 'CURRENT ACTIVE VIEW CONTEXT' before acting. If the user is on the Dashboard, ask which project they want to work on or if they want to create a new one. Use 'MANAGE_PROJECT' (action: CREATE) if the user requests a new project.
+*   **Tone:** Professional, organized, concise, yet helpful and encouraging.
+*   **Format:** Use Markdown for text responses. For tool usage, strictly use the JSON format below.
+
+### TOOL USE FORMAT
+To execute a command, append this JSON block to your message:
+
+\`\`\`json
+{
+  "tool": "TOOL_NAME",
+  "args": { ...arguments }
+}
+\`\`\`
+`;
+
+  // Use user custom instructions if available, otherwise use core prompt
+  const mainSystemPrompt = customInstructions && customInstructions.trim().length > 0 
+    ? customInstructions 
+    : CORE_SYSTEM_PROMPT;
+
+  return `
+${mainSystemPrompt}
+
+---
+**GLOBAL DATABASE CONTEXT:**
 ${JSON.stringify({ all_projects: allProjectsSummary }, null, 2)}
 
-CURRENT ACTIVE VIEW CONTEXT:
+**CURRENT ACTIVE VIEW CONTEXT:**
 ${currentProjectContext ? JSON.stringify(currentProjectContext, null, 2) : "User is on Dashboard (No active project)."}
 
-DATE CONTEXT:
+**DATE CONTEXT:**
 Today is ${new Date().toLocaleString()}.
 `;
 };
@@ -136,42 +196,52 @@ export const sendMessageToOpenRouter = async (
 
     const data = await response.json();
     const assistantContent = data.choices[0].message.content || "";
+    console.log("[AI RAW RESPONSE]:", assistantContent);
 
     // Robust JSON extraction for tool calls
-    const jsonMatch = assistantContent.match(/```json\n([\s\S]*?)\n```/) || assistantContent.match(/```\n([\s\S]*?)\n```/);
-    
+    // 1. Try extracting from markdown code blocks first
+    let jsonMatch = assistantContent.match(/```json\n([\s\S]*?)\n```/) || assistantContent.match(/```\n([\s\S]*?)\n```/);
+    let toolData = null;
+
     if (jsonMatch) {
       try {
-        const toolData = JSON.parse(jsonMatch[1]);
-        if (toolData.tool && toolData.args) {
+        toolData = JSON.parse(jsonMatch[1]);
+      } catch (e) {
+        console.warn("Failed to parse tool JSON from code block", e);
+      }
+    } 
+    
+    // 2. Fallback: Look for the last JSON-like object in the text
+    // This regex looks for { "tool": ... } pattern specifically
+    if (!toolData) {
+        const jsonFallbackMatch = assistantContent.match(/(\{[\s\S]*"tool"[\s\S]*\})/g);
+        if (jsonFallbackMatch && jsonFallbackMatch.length > 0) {
+            try {
+                // Take the last match as it's likely the tool call
+                const potentialJson = jsonFallbackMatch[jsonFallbackMatch.length - 1];
+                toolData = JSON.parse(potentialJson);
+            } catch (e) {
+                console.warn("Failed to parse fallback JSON", e);
+            }
+        }
+    }
+    
+    if (toolData && toolData.tool && toolData.args) {
+        try {
             const result = await onToolCall(toolData.tool, toolData.args);
-            
             return {
                 id: Date.now().toString(),
                 role: 'assistant',
                 content: assistantContent + `\n\n> *System Action: ${toolData.tool} executed.* \n> Status: ${result}`,
                 timestamp: Date.now()
             };
-        }
-      } catch (e) {
-        console.warn("Failed to parse tool JSON", e);
-      }
-    } 
-    // Fallback: try parsing the entire content if it looks like JSON
-    else if (assistantContent.trim().startsWith('{') && assistantContent.includes('"tool"')) {
-        try {
-            const toolData = JSON.parse(assistantContent);
-            if (toolData.tool && toolData.args) {
-                const result = await onToolCall(toolData.tool, toolData.args);
-                return {
-                    id: Date.now().toString(),
-                    role: 'assistant',
-                    content: `> *System Action: ${toolData.tool} executed.*\n> Status: ${result}`,
-                    timestamp: Date.now()
-                };
-            }
-        } catch (e) {
-            // Not JSON
+        } catch (e: any) {
+             return {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: assistantContent + `\n\n> *System Action Failed:* ${e.message}`,
+                timestamp: Date.now()
+            };
         }
     }
 

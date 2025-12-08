@@ -2,17 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { Task, Priority, Subtask } from '../types';
 import { X, Plus, Trash2, Calendar, Tag, CheckSquare, AlignLeft, Flag, Clock, Play, Pause, Eraser } from './Icons';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSave: (task: Partial<Task>) => void;
+  onDelete: (taskId: string) => void;
   initialTask?: Task | null;
   projectId: string;
   projectColumns: any[];
 }
 
-export const TaskModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialTask, projectId, projectColumns }) => {
+export const TaskModal: React.FC<Props> = ({ isOpen, onClose, onSave, onDelete, initialTask, projectId, projectColumns }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>(Priority.MEDIUM);
@@ -20,6 +22,7 @@ export const TaskModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialTas
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -270,14 +273,42 @@ export const TaskModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialTas
           </div>
         </div>
 
-        <div className="p-5 border-t border-border flex justify-end gap-3 bg-surfaceHighlight/20">
-          <button onClick={onClose} className="px-5 py-2 rounded-lg text-sm font-medium text-textMuted hover:text-text transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave} className="px-6 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primaryHover shadow-lg shadow-primary/20 transition-all transform active:scale-95">
-            Save Task
-          </button>
+        <div className="p-5 border-t border-border flex justify-between items-center bg-surfaceHighlight/20">
+          <div>
+              {initialTask && (
+                  <button 
+                    onClick={() => setShowDeleteConfirm(true)} 
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-2"
+                  >
+                    <Trash2 size={16}/> Delete
+                  </button>
+              )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-5 py-2 rounded-lg text-sm font-medium text-textMuted hover:text-text transition-colors">
+                Cancel
+            </button>
+            <button onClick={handleSave} className="px-6 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primaryHover shadow-lg shadow-primary/20 transition-all transform active:scale-95">
+                Save Task
+            </button>
+          </div>
         </div>
+
+        <ConfirmDialog 
+            isOpen={showDeleteConfirm}
+            onClose={() => setShowDeleteConfirm(false)}
+            onConfirm={() => {
+                if (initialTask) {
+                    onDelete(initialTask.id);
+                    onClose();
+                }
+            }}
+            title="Delete Task?"
+            message="This action cannot be undone. Are you sure you want to permanently delete this task?"
+            confirmLabel="Delete"
+            isDestructive={true}
+        />
+
       </div>
     </div>
   );

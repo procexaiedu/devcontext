@@ -43,6 +43,7 @@ export const generateProjectContext = (
 - **Description**: ${project.description}
 - **Progress**: ${progress}% Complete
 - **Stack/Tags**: ${project.tags.join(', ')}
+${project.githubRepo ? `- **Repository**: https://github.com/${project.githubRepo} (Branch: ${project.githubBranch || 'main'})` : ''}
 
 ## Current Focus (Active Tasks)
 ${taskListToString(activeTasks)}

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, KanbanColumn } from '../types';
 import { X, Save, Trash2, Archive, AlertCircle, Plus, GripVertical } from 'lucide-react';
+import { GitHubRepoSelector } from './GitHubRepoSelector';
 
 interface Props {
   isOpen: boolean;
@@ -15,6 +16,9 @@ export const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description);
   const [status, setStatus] = useState(project.status);
+  const [repo, setRepo] = useState(project.githubRepo || '');
+  const [branch, setBranch] = useState(project.githubBranch || 'main');
+  const [token, setToken] = useState(project.githubToken || '');
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -22,6 +26,9 @@ export const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project
     setName(project.name);
     setDescription(project.description);
     setStatus(project.status);
+    setRepo(project.githubRepo || '');
+    setBranch(project.githubBranch || 'main');
+    setToken(project.githubToken || '');
     setColumns(project.columns || []);
     setConfirmDelete(false);
   }, [project, isOpen]);
@@ -35,6 +42,9 @@ export const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project
       description,
       status,
       columns,
+      githubRepo: repo,
+      githubBranch: branch,
+      githubToken: token,
       updatedAt: Date.now()
     });
     onClose();
@@ -75,6 +85,16 @@ export const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full bg-background border border-border rounded-lg p-3 text-text outline-none resize-none"/>
               </div>
           </div>
+
+          {/* GitHub Integration */}
+          <GitHubRepoSelector 
+            repo={repo}
+            branch={branch}
+            token={token}
+            onRepoChange={setRepo}
+            onBranchChange={setBranch}
+            onTokenChange={setToken}
+          />
 
           {/* Kanban Columns */}
           <div className="border-t border-border pt-4">

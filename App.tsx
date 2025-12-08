@@ -310,6 +310,7 @@ export default function App() {
             initialTask={editingTask}
             projectColumns={currentProject.columns}
             onSave={saveTask}
+            onDelete={(tid) => { dispatch({ type: 'DELETE_TASK', payload: tid }); showToast('Task deleted', 'SUCCESS'); }}
           />
       )}
 
